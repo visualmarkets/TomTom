@@ -85,7 +85,6 @@ rawTrafficData <-
           geoData = geoData,
           trafficData = trafficData
         )
-
       }
     })
   ) %>%
@@ -110,3 +109,22 @@ trafficData <-
   compact() %>%
   reduce(function(x, y){bind_rows(x, y)})
 
+#--------------#
+# Upload to DB #
+#--------------#
+
+readr::write_csv(trafficData, "trafficData.csv")
+
+channel <- dbConnect(odbc(), dsn = "EricMart_PostgreSQL")
+
+dbDataDate <-
+  channel %>%
+  tbl("tom_tom") %>%
+  collect() %>%
+  summarize(city_date = max(date_time))
+
+uploadData <- trafficData %>% filter(date_time > dbDataDate[['city_date']])
+
+dbWriteTable(channel, "tom_tom", uploadData, append = T)
+
+dbDisconnect(channel)
