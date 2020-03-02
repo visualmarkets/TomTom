@@ -9,6 +9,7 @@ library(httr)
 library(glue)
 library(magrittr)
 library(assertthat)
+library(odbc)
 
 # Global settings
 apiKey <- "3wmhSmm0ZzlhnOSnPKRYYXqivuljEp0y"
@@ -96,6 +97,7 @@ trafficErrors <-
 
 
 trafficData <-
+  rawTrafficData %>% 
   map(function(x){x$result}) %>%
   reduce(function(x, y){bind_rows(x, y)})
 
