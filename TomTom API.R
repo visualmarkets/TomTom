@@ -11,22 +11,14 @@ library(magrittr)
 library(assertthat)
 library(odbc)
 
+# Load modules
+modules::expose("classes/GenCityList.R")
+
+# Gather city href urls
+refTable <- CityList$cityData
+
 # Global settings
 apiKey <- "3wmhSmm0ZzlhnOSnPKRYYXqivuljEp0y"
-
-# Reference table
-refTable <-
-  tibble(
-    country = c("CHN", "CHN", "HKG", "ITA", "CHN", "CHN", "SGP"),
-    city = c("beijing", "shanghai", "hong-kong", "milan", "wuhan", "shenzhen", "singapore")
-  )
-
-refTable <-
-  readRDS("cityData.Rds") %>%
-  select(
-    country = country,
-    city = href_cities
-  )
 
 # API Endpoints
 baseApi <- glue("https://api.midway.tomtom.com/ranking/live/{refTable[['country']]}%2FCircle%2F{refTable[['city']]}")
@@ -35,6 +27,7 @@ baseApi <- glue("https://api.midway.tomtom.com/ranking/live/{refTable[['country'
 # Gather Api Data #
 #-----------------#
 
+# Get raw traffic and city geo data
 rawTrafficData <-
   pmap(
     list(
@@ -60,45 +53,61 @@ rawTrafficData <-
         # Response body
         trafficList <- content(response)[[2]]
 
+        geoData <- c(lat = tradfficHeader[['shape']][['centerLat']],
+                     lon = tradfficHeader[['shape']][['centerLon']])
+
         # Manipulate Data
-        trafficList %>%
-          map(
-            safely({
-              function(x){
-                unlist(x)
-              }
-            })
-          ) %>%
-          map(~{.x$result}) %>%
-          reduce(function(x, y){bind_rows(x, y)}) %>%
-          mutate(
-            UpdateTime = as.POSIXct(UpdateTime / 1000, origin = "1970-01-01", timezone = "UTC"),
-            city = city
-          ) %>%
-          select(
-            city                   = city,
-            date_time              = UpdateTime,
-            traffic_index_live     = TrafficIndexLive,
-            traffic_index_historic = TrafficIndexHistoric,
-            jams_count             = JamsCount,
-            jams_length            = JamsLength,
-            jams_delay             = JamsDelay
-          )
+        trafficData <-
+          trafficList %>%
+            map(
+              safely({
+                function(x){
+                  unlist(x)
+                }
+              })
+            ) %>%
+            map(~{.x$result}) %>%
+            reduce(function(x, y){bind_rows(x, y)}) %>%
+            mutate(
+              UpdateTime = as.POSIXct(UpdateTime / 1000, origin = "1970-01-01", timezone = "America/Boston"),
+              city = city
+            ) %>%
+            select(
+              city                   = city,
+              date_time              = UpdateTime,
+              traffic_index_live     = TrafficIndexLive,
+              traffic_index_historic = TrafficIndexHistoric,
+              jams_count             = JamsCount,
+              jams_length            = JamsLength,
+              jams_delay             = JamsDelay
+            )
+
+        list(
+          geoData = geoData,
+          trafficData = trafficData
+        )
       }
     })
   ) %>%
   set_names(refTable[["city"]])
 
-
+# Save list of api errors
 trafficErrors <-
   rawTrafficData %>%
   map(~{.x$error}) %>%
   compact()
 
+# Extract geographic data
+geoData <-
+  rawTrafficData %>%
+  map(function(x){x$result$geoData}) %>%
+  compact()
 
+# Get traffic congestion data
 trafficData <-
-  rawTrafficData %>% 
-  map(function(x){x$result}) %>%
+  rawTrafficData %>%
+  map(function(x){x$result$trafficData}) %>%
+  compact() %>%
   reduce(function(x, y){bind_rows(x, y)})
 
 #--------------#
